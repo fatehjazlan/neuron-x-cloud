@@ -290,11 +290,7 @@ Do not add punctuation.
             ],
 
             "generationConfig": {
-
-                "temperature": 0,
-
                 "maxOutputTokens": 20
-
             }
 
         }
@@ -323,7 +319,7 @@ Do not add punctuation.
 
             json=payload,
 
-            timeout=30
+            timeout=90
 
         )
 
