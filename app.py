@@ -1,11 +1,15 @@
 from flask import Flask, request, jsonify
 import os
 import requests
+import time
+import random
 
 app = Flask(__name__)
 
-# API key diambil daripada Render Environment
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# Gemini model
+MODEL = "gemini-3.5-flash-lite"
 
 
 # =========================
@@ -14,166 +18,414 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 @app.route("/")
 def home():
     return """
-    <!DOCTYPE html>
-    <html>
+<!DOCTYPE html>
+<html>
 
-    <head>
-        <meta name="viewport"
-              content="width=device-width, initial-scale=1">
+<head>
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1">
 
-        <title>NEURON-X AI</title>
-    </head>
+    <title>NEURON-X AI</title>
+</head>
 
-    <body style="
-        font-family:Arial;
-        text-align:center;
-        padding:40px;
-    ">
+<body style="
+    font-family:Arial;
+    text-align:center;
+    padding:40px;
+">
 
-        <h1>NEURON-X CLOUD AI</h1>
+    <h1>NEURON-X CLOUD AI</h1>
 
-        <p>AI Intent Analysis</p>
+    <p>AI Intent Analysis</p>
 
-        <input
-            id="message"
-            type="text"
-            placeholder="Type message..."
-            style="
-                padding:12px;
-                width:80%;
-                max-width:400px;
-            "
-        >
+    <input
+        id="message"
+        type="text"
+        placeholder="Type message..."
+        style="
+            padding:12px;
+            width:80%;
+            max-width:400px;
+        "
+    >
 
-        <br><br>
+    <br><br>
 
-        <button
-            onclick="analyze()"
-            style="padding:12px 25px;"
-        >
-            ANALYZE WITH AI
-        </button>
+    <button
+        id="analyzeButton"
+        onclick="analyze()"
+        style="padding:12px 25px;"
+    >
+        ANALYZE WITH AI
+    </button>
 
-        <h3>AI Result:</h3>
+    <h3>AI Result:</h3>
 
-        <p
-            id="result"
-            style="white-space:pre-line;"
-        >
-            Waiting for message...
-        </p>
-
-
-        <script>
-
-        async function analyze() {
-
-            const message =
-                document.getElementById("message").value;
-
-            if (!message.trim()) {
-
-                document.getElementById("result").innerText =
-                    "Please enter a message.";
-
-                return;
-            }
-
-            document.getElementById("result").innerText =
-                "AI analyzing...";
+    <p id="result"
+       style="white-space:pre-line;">
+        Waiting for message...
+    </p>
 
 
-            try {
+<script>
 
-                const response = await fetch("/analyze", {
+async function analyze() {
 
-                    method: "POST",
+    const message =
+        document.getElementById("message").value;
 
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
+    const result =
+        document.getElementById("result");
 
-                    body: JSON.stringify({
-                        message: message
-                    })
-
-                });
+    const button =
+        document.getElementById("analyzeButton");
 
 
-                const data = await response.json();
+    if (!message.trim()) {
+
+        result.innerText =
+            "Please enter a message.";
+
+        return;
+    }
 
 
-                if (data.intent) {
+    result.innerText =
+        "AI analyzing...";
 
-                    document.getElementById("result").innerText =
-                        "Message: " + data.message +
-                        "\\nAI Intent: " + data.intent;
-
-                }
-
-                else {
-
-                    document.getElementById("result").innerText =
-                        "Error: " +
-                        (data.error || "Unknown error") +
-                        "\\n" +
-                        (data.details || "");
-
-                }
+    button.disabled = true;
 
 
-            }
+    try {
 
-            catch (error) {
+        const response =
+            await fetch("/analyze", {
 
-                document.getElementById("result").innerText =
-                    "Connection error: " + error;
+                method: "POST",
 
-            }
+                headers: {
+                    "Content-Type":
+                    "application/json"
+                },
+
+                body: JSON.stringify({
+                    message: message
+                })
+
+            });
+
+
+        const data =
+            await response.json();
+
+
+        if (data.intent) {
+
+            result.innerText =
+                "Message: " + data.message +
+                "\\nAI Intent: " + data.intent;
 
         }
 
-        </script>
+        else {
 
-    </body>
+            result.innerText =
+                "Error: " +
+                (data.error || "Unknown error") +
+                "\\n" +
+                (data.details || "");
 
-    </html>
-    """
+        }
+
+    }
+
+    catch (error) {
+
+        result.innerText =
+            "Connection error: " + error;
+
+    }
+
+    finally {
+
+        button.disabled = false;
+
+    }
+}
+
+</script>
+
+</body>
+</html>
+"""
 
 
 # =========================
-# AI ANALYSIS
+# GEMINI REQUEST
+# =========================
+def ask_gemini(message):
+
+    prompt = f"""
+You are the AI intent classifier for NEURON-X,
+an assistive communication device for a deafblind user.
+
+Understand Malay, informal Malay and English.
+
+Classify the user's message into EXACTLY ONE
+of these categories:
+
+TOILET
+FOOD_DRINK
+HELP
+EMERGENCY
+NORMAL_MESSAGE
+
+Rules:
+
+TOILET:
+The user wants to go to the toilet,
+use the bathroom or relieve themselves.
+
+FOOD_DRINK:
+The user wants food, water or another drink,
+or says that they are hungry or thirsty.
+
+HELP:
+The user asks for assistance.
+
+EMERGENCY:
+The user explicitly indicates immediate danger,
+injury, emergency or urgent assistance.
+
+NORMAL_MESSAGE:
+Anything else.
+
+Examples:
+
+Saya nak pergi tandas
+TOILET
+
+Nak buang air
+TOILET
+
+Saya dahaga
+FOOD_DRINK
+
+Nak air
+FOOD_DRINK
+
+Saya lapar
+FOOD_DRINK
+
+Tolong saya
+HELP
+
+Saya dalam bahaya
+EMERGENCY
+
+Apa khabar
+NORMAL_MESSAGE
+
+
+User message:
+{message}
+
+
+Return ONLY the category name.
+
+Do not explain.
+Do not use markdown.
+Do not add punctuation.
+"""
+
+
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        f"v1beta/models/{MODEL}:generateContent"
+    )
+
+
+    headers = {
+
+        "Content-Type":
+            "application/json",
+
+        "x-goog-api-key":
+            GEMINI_API_KEY
+
+    }
+
+
+    payload = {
+
+        "contents": [
+
+            {
+
+                "parts": [
+
+                    {
+                        "text": prompt
+                    }
+
+                ]
+
+            }
+
+        ],
+
+        "generationConfig": {
+
+            "maxOutputTokens": 20
+
+        }
+
+    }
+
+
+    # =========================
+    # AUTOMATIC RETRY
+    # =========================
+
+    max_attempts = 4
+
+
+    for attempt in range(max_attempts):
+
+        try:
+
+            print(
+                f"GEMINI ATTEMPT {attempt + 1}/{max_attempts}",
+                flush=True
+            )
+
+
+            response = requests.post(
+
+                url,
+
+                headers=headers,
+
+                json=payload,
+
+                timeout=60
+
+            )
+
+
+            print(
+                "GEMINI STATUS:",
+                response.status_code,
+                flush=True
+            )
+
+
+            # SUCCESS
+            if response.status_code == 200:
+
+                return response
+
+
+            # Temporary errors
+            if response.status_code in [
+                408,
+                429,
+                500,
+                502,
+                503,
+                504
+            ]:
+
+                if attempt < max_attempts - 1:
+
+                    # 2 sec → 4 sec → 8 sec
+                    delay = (2 ** (attempt + 1))
+
+                    # Small random jitter
+                    delay += random.uniform(0, 1)
+
+
+                    print(
+                        f"Temporary Gemini error. "
+                        f"Retrying in {delay:.1f}s...",
+                        flush=True
+                    )
+
+
+                    time.sleep(delay)
+
+                    continue
+
+
+            # Non-retryable error
+            return response
+
+
+        except requests.exceptions.RequestException as e:
+
+            print(
+                "NETWORK ERROR:",
+                repr(e),
+                flush=True
+            )
+
+
+            if attempt < max_attempts - 1:
+
+                delay = (2 ** (attempt + 1))
+
+                delay += random.uniform(0, 1)
+
+                time.sleep(delay)
+
+                continue
+
+
+            raise e
+
+
+    return None
+
+
+# =========================
+# ANALYZE ENDPOINT
 # =========================
 @app.route("/analyze", methods=["POST"])
 def analyze():
 
     try:
 
-        # Get JSON from ESP8266 / website
-        data = request.get_json(silent=True)
+        data =
+            request.get_json(silent=True)
 
 
         if not data or not data.get("message"):
 
             return jsonify({
-                "error": "No message received"
+
+                "error":
+                    "No message received"
+
             }), 400
 
 
-        # Check API key
         if not GEMINI_API_KEY:
 
             print(
-                "ERROR: GEMINI_API_KEY NOT FOUND",
+                "GEMINI_API_KEY NOT FOUND",
                 flush=True
             )
 
             return jsonify({
-                "error": "Gemini API key not configured"
+
+                "error":
+                    "Gemini API key not configured"
+
             }), 500
 
 
-        message = str(data["message"]).strip()
+        message =
+            str(data["message"]).strip()
 
 
         print(
@@ -184,151 +436,21 @@ def analyze():
 
 
         # =========================
-        # AI PROMPT
+        # SEND TO GEMINI
         # =========================
 
-        prompt = f"""
-You are the AI intent classifier for NEURON-X,
-an assistive communication device for a deafblind user.
-
-Analyze the message below.
-
-The message may be written in:
-- Malay
-- informal Malay
-- English
-- short phrases
-
-Classify the message into EXACTLY ONE category:
-
-TOILET
-FOOD_DRINK
-HELP
-EMERGENCY
-NORMAL_MESSAGE
-
-Classification rules:
-
-TOILET:
-The user wants to go to the toilet,
-use the bathroom, or relieve themselves.
-
-FOOD_DRINK:
-The user wants food, water, or another drink.
-
-HELP:
-The user asks for assistance or support.
-
-EMERGENCY:
-The message explicitly indicates immediate danger,
-an emergency, injury, or urgent assistance.
-
-NORMAL_MESSAGE:
-Any normal message that does not fit the categories above.
-
-Examples:
-
-"Saya nak pergi tandas"
-TOILET
-
-"Nak buang air"
-TOILET
-
-"Saya dahaga"
-FOOD_DRINK
-
-"Nak makan"
-FOOD_DRINK
-
-"Tolong saya"
-HELP
-
-"Saya dalam bahaya"
-EMERGENCY
-
-"Apa khabar"
-NORMAL_MESSAGE
-
-User message:
-{message}
-
-IMPORTANT:
-Return ONLY the category name.
-
-Do not explain.
-Do not use markdown.
-Do not add punctuation.
-"""
+        response =
+            ask_gemini(message)
 
 
-        # =========================
-        # GEMINI API
-        # =========================
+        if response is None:
 
-        url = (
-            "https://generativelanguage.googleapis.com/"
-            "v1beta/models/gemini-3.5-flash:generateContent"
-        )
+            return jsonify({
 
+                "error":
+                    "Gemini did not respond"
 
-        payload = {
-
-            "contents": [
-
-                {
-
-                    "parts": [
-
-                        {
-                            "text": prompt
-                        }
-
-                    ]
-
-                }
-
-            ],
-
-            "generationConfig": {
-                "maxOutputTokens": 20
-            }
-
-        }
-
-
-        headers = {
-
-            "Content-Type": "application/json",
-
-            "x-goog-api-key": GEMINI_API_KEY
-
-        }
-
-
-        print(
-            "SENDING MESSAGE TO GEMINI...",
-            flush=True
-        )
-
-
-        response = requests.post(
-
-            url,
-
-            headers=headers,
-
-            json=payload,
-
-            timeout=90
-
-        )
-
-
-        print(
-            "GEMINI STATUS:",
-            response.status_code,
-            flush=True
-        )
+            }), 503
 
 
         # =========================
@@ -338,14 +460,30 @@ Do not add punctuation.
         if response.status_code != 200:
 
             print(
-                "GEMINI RESPONSE ERROR:",
+                "GEMINI ERROR RESPONSE:",
                 response.text,
                 flush=True
             )
 
+
+            # Friendly message for busy server
+            if response.status_code == 503:
+
+                return jsonify({
+
+                    "error":
+                        "Gemini is temporarily busy",
+
+                    "details":
+                        "Please try again in a moment."
+
+                }), 503
+
+
             return jsonify({
 
-                "error": "Gemini API error",
+                "error":
+                    "Gemini API error",
 
                 "details":
                     "HTTP " +
@@ -357,10 +495,11 @@ Do not add punctuation.
 
 
         # =========================
-        # READ AI RESPONSE
+        # READ GEMINI RESULT
         # =========================
 
-        result = response.json()
+        result =
+            response.json()
 
 
         print(
@@ -382,9 +521,14 @@ Do not add punctuation.
         )
 
 
-        # =========================
-        # SAFETY CHECK
-        # =========================
+        # Remove accidental punctuation
+        intent = (
+            intent
+            .replace(".", "")
+            .replace("`", "")
+            .strip()
+        )
+
 
         allowed_intents = [
 
@@ -404,17 +548,14 @@ Do not add punctuation.
         if intent not in allowed_intents:
 
             print(
-                "UNKNOWN INTENT:",
+                "UNKNOWN AI INTENT:",
                 intent,
                 flush=True
             )
 
-            intent = "NORMAL_MESSAGE"
+            intent =
+                "NORMAL_MESSAGE"
 
-
-        # =========================
-        # SUCCESS
-        # =========================
 
         print(
             "AI INTENT:",
@@ -423,25 +564,28 @@ Do not add punctuation.
         )
 
 
+        # =========================
+        # SEND RESULT BACK
+        # =========================
+
         return jsonify({
 
-            "status": "success",
+            "status":
+                "success",
 
-            "message": message,
+            "message":
+                message,
 
-            "intent": intent
+            "intent":
+                intent
 
         })
 
 
-    # =========================
-    # PYTHON ERROR
-    # =========================
-
     except Exception as e:
 
         print(
-            "GEMINI ERROR:",
+            "NEURON-X ERROR:",
             repr(e),
             flush=True
         )
@@ -449,9 +593,11 @@ Do not add punctuation.
 
         return jsonify({
 
-            "error": "AI request failed",
+            "error":
+                "AI request failed",
 
-            "details": str(e)
+            "details":
+                str(e)
 
         }), 500
 
